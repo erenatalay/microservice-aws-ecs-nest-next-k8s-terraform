@@ -1,6 +1,6 @@
 # AWS ECS + Terraform
 
-Bu klasör artık Hetzner/k3s yerine **AWS ECS (Fargate)** üzerinde çalışan yapı için düzenlendi.
+Bu klasör **AWS ECS (Fargate)** üzerinde çalışan yapı için düzenlendi.
 
 Kurulan bileşenler:
 - VPC + 2 public subnet
