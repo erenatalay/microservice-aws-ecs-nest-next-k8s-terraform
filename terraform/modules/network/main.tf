@@ -1,0 +1,34 @@
+
+
+
+
+
+resource "hcloud_network" "main" {
+  name     = "${var.cluster_name}-network"
+  ip_range = var.network_cidr
+  labels   = var.labels
+}
+
+
+resource "hcloud_network_subnet" "kubernetes" {
+  network_id   = hcloud_network.main.id
+  type         = "cloud"
+  network_zone = var.network_zone
+  ip_range     = var.subnet_cidr
+}
+
+
+resource "hcloud_network_subnet" "pods" {
+  network_id   = hcloud_network.main.id
+  type         = "cloud"
+  network_zone = var.network_zone
+  ip_range     = "10.0.2.0/24"
+}
+
+
+resource "hcloud_network_subnet" "services" {
+  network_id   = hcloud_network.main.id
+  type         = "cloud"
+  network_zone = var.network_zone
+  ip_range     = "10.0.3.0/24"
+}

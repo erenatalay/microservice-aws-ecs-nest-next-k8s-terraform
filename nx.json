@@ -1,0 +1,16 @@
+{
+  "installation": {
+    "version": "22.2.3",
+    "plugins": {
+      "@nx/eslint": "22.2.3",
+      "@nx/jest": "22.2.3",
+      "@nx/next": "22.2.3"
+    }
+  },
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "targetDefaults": {
+    "serve": {
+      "cache": false
+    }
+  }
+}

@@ -1,0 +1,82 @@
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+{{- $host := .host }}
+{{- $isApiHost := hasPrefix "api." $host }}
+{{- $isAuthHost := hasPrefix "auth." $host }}
+{{- $isProductHost := hasPrefix "product." $host }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "chart.fullname" $ }}-{{ $host | replace "." "-" }}
+  labels:
+    {{- include "chart.labels" $ | nindent 4 }}
+  {{- with $.Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if $.Values.ingress.className }}
+  ingressClassName: {{ $.Values.ingress.className }}
+  {{- end }}
+  {{- if $.Values.ingress.tls }}
+  {{- $tlsEntry := false }}
+  {{- range $.Values.ingress.tls }}
+  {{- range .hosts }}
+  {{- if eq . $host }}
+  {{- $tlsEntry = true }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- if $tlsEntry }}
+  tls:
+    {{- range $.Values.ingress.tls }}
+    {{- $hasHost := false }}
+    {{- range .hosts }}
+    {{- if eq . $host }}
+    {{- $hasHost = true }}
+    {{- end }}
+    {{- end }}
+    {{- if $hasHost }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                {{- if .backend }}
+                name: {{ .backend.serviceName }}
+                port:
+                  number: {{ .backend.servicePort }}
+                {{- else if $isApiHost }}
+                name: {{ $.Values.gateway.name }}
+                port:
+                  number: {{ $.Values.gateway.service.port }}
+                {{- else if $isAuthHost }}
+                name: {{ $.Values.authApi.name }}
+                port:
+                  number: {{ $.Values.authApi.service.port }}
+                {{- else if $isProductHost }}
+                name: {{ $.Values.productApi.name }}
+                port:
+                  number: {{ $.Values.productApi.service.port }}
+                {{- else }}
+                name: {{ $.Values.ecommerce.name }}
+                port:
+                  number: {{ $.Values.ecommerce.service.port }}
+                {{- end }}
+          {{- end }}
+{{- end }}
+{{- end }}
