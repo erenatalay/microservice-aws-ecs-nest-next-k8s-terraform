@@ -11,7 +11,6 @@ import {
   ValidationPipe,
   HttpCode,
   HttpStatus,
-  Logger,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -28,7 +27,6 @@ import {
   CurrentUserData,
 } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { I18nService } from '../i18n/i18n.service';
 import {
   CreateProductDto,
   UpdateProductDto,
@@ -40,12 +38,7 @@ import { ProductsService } from './products.service';
 @Controller({ path: 'products', version: '1' })
 @ApiTags('Products')
 export class ProductsController {
-  private readonly logger = new Logger(ProductsController.name);
-
-  constructor(
-    private readonly productsService: ProductsService,
-    private readonly i18nService: I18nService,
-  ) {}
+  constructor(private readonly productsService: ProductsService) {}
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -65,11 +58,6 @@ export class ProductsController {
     @Body() createProductDto: CreateProductDto,
     @CurrentUser() user: CurrentUserData,
   ): Promise<ProductResponseDto> {
-    this.logger.log(
-      `POST /products - Creating new product by user: ${user.email}`,
-    );
-
-
     createProductDto.userId = user.userId;
 
     return await this.productsService.create(createProductDto);
@@ -89,7 +77,6 @@ export class ProductsController {
   @UsePipes(new ValidationPipe({ transform: true }))
   @HttpCode(HttpStatus.OK)
   async findAll(@Query() query: QueryProductDto) {
-    this.logger.log('GET /products - Retrieving products');
     return await this.productsService.findAll(query);
   }
 
@@ -109,7 +96,6 @@ export class ProductsController {
   })
   @HttpCode(HttpStatus.OK)
   async findOne(@Param('id') id: string): Promise<ProductResponseDto> {
-    this.logger.log(`GET /products/${id} - Retrieving product`);
     return await this.productsService.findOne(id);
   }
 
@@ -125,7 +111,6 @@ export class ProductsController {
   async findByUserId(
     @Param('userId') userId: string,
   ): Promise<ProductResponseDto[]> {
-    this.logger.log(`GET /products/user/${userId} - Retrieving user products`);
     return await this.productsService.findByUserId(userId);
   }
 
@@ -149,11 +134,7 @@ export class ProductsController {
   async update(
     @Param('id') id: string,
     @Body() updateProductDto: UpdateProductDto,
-    @CurrentUser() user: CurrentUserData,
   ): Promise<ProductResponseDto> {
-    this.logger.log(
-      `PUT /products/${id} - Updating product by user: ${user.email}`,
-    );
     return await this.productsService.update(id, updateProductDto);
   }
 
@@ -171,13 +152,7 @@ export class ProductsController {
     description: 'Product not found',
   })
   @HttpCode(HttpStatus.OK)
-  async remove(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ): Promise<{ message: string }> {
-    this.logger.log(
-      `DELETE /products/${id} - Deleting product by user: ${user.email}`,
-    );
+  async remove(@Param('id') id: string): Promise<{ message: string }> {
     return await this.productsService.remove(id);
   }
 }

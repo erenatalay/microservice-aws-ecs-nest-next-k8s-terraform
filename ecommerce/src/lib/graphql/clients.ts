@@ -1,6 +1,7 @@
 import { GraphQLClient, RequestDocument, Variables } from 'graphql-request';
 import Cookies from 'js-cookie';
 
+import { getBrowserCorrelationId } from '../correlation';
 import { parseGraphQLError, AppGraphQLError } from './error-codes';
 
 export type RequestVars = Variables | undefined;
@@ -10,12 +11,21 @@ export type GraphQLCaller = <T>(
 ) => Promise<T>;
 
 const gatewayEndpoint =
-  process.env.NEXT_PUBLIC_GRAPHQL_URL ?? 'http://localhost:4000/graphql';
+  process.env.INTERNAL_GRAPHQL_URL ??
+  process.env.NEXT_PUBLIC_GRAPHQL_URL ??
+  (typeof window !== 'undefined'
+    ? `${window.location.origin}/graphql`
+    : 'http://localhost:4000/graphql');
 
 function createClient(token?: string): GraphQLClient {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
+  const correlationId = getBrowserCorrelationId();
+
+  if (correlationId) {
+    headers['x-correlation-id'] = correlationId;
+  }
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;

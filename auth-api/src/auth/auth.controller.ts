@@ -7,11 +7,9 @@ import {
   ValidationPipe,
   HttpCode,
   HttpStatus,
-  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 
-import { TokenService } from '../token/token.service';
 import { AuthService } from './auth.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { AuthLoginRequestDto } from './dto/login-request-auth.dto';
@@ -22,12 +20,9 @@ import { VerifyAccountDto } from './dto/verify-account.dto';
 @Controller({ path: 'auth', version: '1' })
 @ApiTags('Auth')
 export class AuthController {
-  private readonly logger = new Logger(AuthController.name);
-
   constructor(
     private readonly authService: AuthService,
     private readonly i18nService: I18nService,
-    private readonly tokenService: TokenService,
   ) {}
 
   @Post('register')

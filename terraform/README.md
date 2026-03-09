@@ -1,71 +1,72 @@
-# AWS ECS + Terraform
+# AWS ECS + Terraform + Loki/Grafana
 
-Bu klasör **AWS ECS (Fargate)** üzerinde çalışan yapı için düzenlendi.
+Bu klasor AWS ECS Fargate, Docker Hub, Loki ve Grafana tabanli production mimarisini kurar.
 
-Kurulan bileşenler:
-- VPC + 2 public subnet
-- Internet Gateway + route table
-- Application Load Balancer (ALB)
-- ECS Cluster (Fargate)
-- Cloud Map service discovery (`auth-api.svc.local`, vb.)
-- CloudWatch log group
-- IAM task/execution role
-- 4 ECS service:
-  - `auth-api` (3001)
-  - `product-api` (3002)
-  - `gateway` (4000)
-  - `ecommerce` (3000)
+Kurulan ana bilesenler:
+- 2 AZ uzerinde public ve private subnet yapisi
+- NAT Gateway ile private ECS task cikisi
+- Application Load Balancer
+- ECS Cluster ve uygulama servisleri
+- Cloud Map service discovery
+- ECS autoscaling
+- ALB access logs (S3)
+- Loki icin S3 storage
+- Grafana icin EFS persistence
+- CloudWatch uzerinde platform loglari, ECS/ALB metric ve alarm'lar
 
-ALB routing:
-- `/api*` ve `/graphql*` -> `gateway`
-- diğer tüm yollar -> `ecommerce`
+Servisler:
+- `auth-api`
+- `product-api`
+- `gateway`
+- `ecommerce`
+- `loki`
+- `grafana`
 
-## Gereksinimler
+Izlenebilirlik modeli:
+- Uygulama loglari `awsfirelens` ile Loki'ye akar
+- Her request logunda `correlationId`, `userId`, `statusCode`, `durationMs`, `outcome` bulunur
+- Grafana `/grafana` altindan Loki datasource ile acilir
+- CloudWatch sadece platform loglari, ALB metrikleri ve ECS metrikleri icin kullanilir
 
-- Terraform `>= 1.5`
-- AWS hesabı ve yeterli IAM izinleri
-- İmajların bir container registry’de (tercihen ECR) hazır olması
+Gerekli degiskenler:
+- `auth_database_url`
+- `product_database_url`
+- `jwt_secret`
+- `grafana_admin_password`
+- `jwt_refresh_secret` (opsiyonel, bos ise `jwt_secret` kullanilir)
+- `dockerhub_repository_credentials_secret_arn` (Docker Hub private image kullaniliyorsa)
 
-## Hızlı Kullanım
+Hizli kullanim:
 
 ```bash
 cd terraform
 terraform init
-terraform plan -var-file=environments/dev.tfvars
-terraform apply -var-file=environments/dev.tfvars
+terraform plan -var-file=environments/production.tfvars -var="grafana_admin_password=CHANGE_ME"
+terraform apply -var-file=environments/production.tfvars -var="grafana_admin_password=CHANGE_ME"
 ```
 
-## Önemli Değişkenler
+Log takibi:
+- `grafana_url` output'unu ac
+- Explore ekraninda Loki datasource sec
+- Correlation id icin su LogQL'i kullan:
 
-`environments/*.tfvars` içinde mutlaka doldur:
-- `auth_api_image`
-- `product_api_image`
-- `gateway_image`
-- `ecommerce_image`
-- `auth_database_url`
-- `product_database_url`
-- `jwt_secret`
+```logql
+{service=~"auth-api|product-api|gateway|ecommerce"} | json | correlationId="REPLACE_WITH_CORRELATION_ID"
+```
 
-Opsiyonel:
-- `public_app_url`
-- `next_public_graphql_url`
+- Belirli bir kullanici icin:
 
-Boş bırakılırsa Terraform otomatik ALB DNS’ini kullanır.
+```logql
+{service=~"auth-api|product-api|gateway"} | json | userId="REPLACE_WITH_USER_ID"
+```
 
-## Örnek Deploy Akışı
+- Son hatalar icin:
 
-1. ECR repository’lerine image push et.
-2. `environments/dev.tfvars` içindeki image URI’larını güncelle.
-3. DB URL ve JWT secret değerlerini gir.
-4. `terraform apply` çalıştır.
-5. Çıktıdaki `alb_dns_name` veya `public_app_url` ile uygulamaya eriş.
+```logql
+{service=~"auth-api|product-api|gateway|ecommerce"} | json | outcome="error"
+```
 
-## Notlar
-
-- Bu yapı minimum çalışan ECS/Fargate altyapısıdır.
-- Production için öneriler:
-  - HTTPS listener + ACM sertifikası
-  - WAF
-  - RDS/Aurora + Secrets Manager
-  - ECS autoscaling
-  - Private subnet + NAT
+Onemli notlar:
+- Loki retention ayari `loki_retention_period`, S3 saklama suresi `loki_s3_retention_days` ile yonetilir
+- Grafana state'i EFS'te tutulur; datasource tanimi Terraform tarafinda bootstrap edilir
+- Uygulama loglari artik CloudWatch Logs Insights yerine Grafana Loki uzerinden takip edilmelidir

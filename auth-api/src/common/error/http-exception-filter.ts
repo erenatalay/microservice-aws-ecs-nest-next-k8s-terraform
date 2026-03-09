@@ -8,6 +8,18 @@ import {
   Logger,
 } from '@nestjs/common';
 
+const safeStringify = (value: unknown) => {
+  const seen = new WeakSet();
+  return JSON.stringify(value, (_key, currentValue) => {
+    if (typeof currentValue === 'object' && currentValue !== null) {
+      if (seen.has(currentValue)) return '[CIRCULAR]';
+      seen.add(currentValue);
+    }
+
+    return currentValue;
+  });
+};
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -20,7 +32,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     if (!request || !response) {
       this.logger.error(
-        `GraphQL error: ${exception instanceof Error ? exception.message : String(exception)}`,
+        safeStringify({
+          timestamp: new Date().toISOString(),
+          event: 'request.failed',
+          service: 'auth-api',
+          outcome: 'error',
+          correlationId:
+            typeof correlationId === 'string' ? correlationId : undefined,
+          errorType: exception instanceof Error ? exception.name : 'Error',
+          errorMessage:
+            exception instanceof Error ? exception.message : String(exception),
+        }),
         exception instanceof Error ? exception.stack : undefined,
       );
       throw exception;
@@ -35,19 +57,36 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const responseBody = exception.getResponse();
 
       if (typeof responseBody === 'object' && responseBody !== null) {
-        message = (responseBody as any).message || exception.message;
+        message = (responseBody as { message?: string | string[] }).message
+          ? Array.isArray((responseBody as { message?: string | string[] }).message)
+            ? (responseBody as { message: string[] }).message.join(', ')
+            : (responseBody as { message: string }).message
+          : exception.message;
 
-        errorDetails = (responseBody as any).errors || null;
+        errorDetails = (responseBody as { errors?: unknown }).errors || null;
       } else {
         message = exception.message;
       }
     } else {
-
-      this.logger.error(
-        `Unexpected error: ${exception instanceof Error ? exception.message : String(exception)}`,
-        exception instanceof Error ? exception.stack : undefined,
-      );
+      message = exception instanceof Error ? exception.message : String(exception);
     }
+
+    this.logger.error(
+      safeStringify({
+        timestamp: new Date().toISOString(),
+        event: 'request.failed',
+        service: 'auth-api',
+        outcome: 'error',
+        correlationId:
+          typeof correlationId === 'string' ? correlationId : undefined,
+        method: request.method,
+        path: request.originalUrl || request.url,
+        statusCode: status,
+        errorType: exception instanceof Error ? exception.name : 'Error',
+        errorMessage: message,
+      }),
+      exception instanceof Error ? exception.stack : undefined,
+    );
 
     const isDevelopment = process.env.NODE_ENV === 'development';
     const errorResponse = {
@@ -56,11 +95,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
       path: request?.url || 'unknown',
       message,
       ...(correlationId && { correlationId }),
-
       ...(typeof errorDetails === 'object' && errorDetails !== null
         ? { errors: errorDetails }
         : {}),
-
       ...(isDevelopment && {
         stack: exception instanceof Error ? exception.stack : undefined,
       }),

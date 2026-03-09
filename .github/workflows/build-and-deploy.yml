@@ -1,4 +1,4 @@
-name: Build and Deploy (AWS ECS)
+name: Build and Deploy (AWS ECS + Docker Hub)
 
 on:
   push:
@@ -24,7 +24,7 @@ on:
           - staging
           - production
       image_tag:
-        description: "Image tag for deploy-only (default: latest)"
+        description: "Image tag for deploy-only"
         required: false
         default: "latest"
 
@@ -32,43 +32,49 @@ env:
   AWS_REGION: ${{ vars.AWS_REGION || 'eu-central-1' }}
   TF_VERSION: "1.5.0"
   TF_WORKING_DIR: "./terraform"
+  DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || secrets.DOCKERHUB_USERNAME }}
 
 jobs:
   build:
-    name: Build and Push Images (ECR)
+    name: Build and Push Images (Docker Hub)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     outputs:
       image_tag: ${{ steps.meta.outputs.image_tag }}
-      ecr_registry: ${{ steps.login-ecr.outputs.registry || steps.meta.outputs.ecr_registry_fallback }}
+      registry_base: ${{ steps.meta.outputs.registry_base }}
 
     steps:
       - name: Checkout
+        if: github.event_name == 'push' || github.event.inputs.action != 'deploy-only'
         uses: actions/checkout@v4
 
-      - name: Resolve image tag
+      - name: Resolve image metadata
         id: meta
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.action }}" == "deploy-only" ]]; then
-            echo "image_tag=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+            IMAGE_TAG="${{ github.event.inputs.image_tag }}"
           else
-            echo "image_tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            IMAGE_TAG="${GITHUB_SHA}"
           fi
-          echo "ecr_registry_fallback=not-used" >> "$GITHUB_OUTPUT"
 
-      - name: Configure AWS Credentials
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "registry_base=docker.io/${DOCKERHUB_NAMESPACE}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Docker Hub configuration
         if: github.event_name == 'push' || github.event.inputs.action != 'deploy-only'
-        uses: aws-actions/configure-aws-credentials@v4
+        shell: bash
+        run: |
+          test -n "${DOCKERHUB_NAMESPACE}" || (echo "DOCKERHUB_NAMESPACE is required" && exit 1)
+          test -n "${{ secrets.DOCKERHUB_USERNAME }}" || (echo "DOCKERHUB_USERNAME secret is required" && exit 1)
+          test -n "${{ secrets.DOCKERHUB_TOKEN }}" || (echo "DOCKERHUB_TOKEN secret is required" && exit 1)
+
+      - name: Login to Docker Hub
+        if: github.event_name == 'push' || github.event.inputs.action != 'deploy-only'
+        uses: docker/login-action@v3
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        if: github.event_name == 'push' || github.event.inputs.action != 'deploy-only'
-        uses: aws-actions/amazon-ecr-login@v2
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and Push auth-api
         if: github.event_name == 'push' || github.event.inputs.action != 'deploy-only'
@@ -77,8 +83,8 @@ jobs:
           context: ./auth-api
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/auth-api:${{ steps.meta.outputs.image_tag }}
-            ${{ steps.login-ecr.outputs.registry }}/auth-api:latest
+            docker.io/${{ env.DOCKERHUB_NAMESPACE }}/auth-api:${{ steps.meta.outputs.image_tag }}
+            docker.io/${{ env.DOCKERHUB_NAMESPACE }}/auth-api:latest
 
       - name: Build and Push product-api
         if: github.event_name == 'push' || github.event.inputs.action != 'deploy-only'
@@ -87,8 +93,8 @@ jobs:
           context: ./product-api
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/product-api:${{ steps.meta.outputs.image_tag }}
-            ${{ steps.login-ecr.outputs.registry }}/product-api:latest
+            docker.io/${{ env.DOCKERHUB_NAMESPACE }}/product-api:${{ steps.meta.outputs.image_tag }}
+            docker.io/${{ env.DOCKERHUB_NAMESPACE }}/product-api:latest
 
       - name: Build and Push gateway
         if: github.event_name == 'push' || github.event.inputs.action != 'deploy-only'
@@ -97,8 +103,8 @@ jobs:
           context: ./gateway
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/gateway:${{ steps.meta.outputs.image_tag }}
-            ${{ steps.login-ecr.outputs.registry }}/gateway:latest
+            docker.io/${{ env.DOCKERHUB_NAMESPACE }}/gateway:${{ steps.meta.outputs.image_tag }}
+            docker.io/${{ env.DOCKERHUB_NAMESPACE }}/gateway:latest
 
       - name: Build and Push ecommerce
         if: github.event_name == 'push' || github.event.inputs.action != 'deploy-only'
@@ -107,8 +113,8 @@ jobs:
           context: ./ecommerce
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/ecommerce:${{ steps.meta.outputs.image_tag }}
-            ${{ steps.login-ecr.outputs.registry }}/ecommerce:latest
+            docker.io/${{ env.DOCKERHUB_NAMESPACE }}/ecommerce:${{ steps.meta.outputs.image_tag }}
+            docker.io/${{ env.DOCKERHUB_NAMESPACE }}/ecommerce:latest
 
   deploy:
     name: Terraform Apply (AWS ECS)
@@ -134,10 +140,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
       - name: Resolve deploy variables
         id: deploy_meta
         shell: bash
@@ -150,22 +152,22 @@ jobs:
             DEPLOY_ENV="production"
           fi
 
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.action }}" == "deploy-only" ]]; then
-            IMAGE_TAG="${{ github.event.inputs.image_tag }}"
-          elif [[ -n "${{ needs.build.outputs.image_tag }}" ]]; then
-            IMAGE_TAG="${{ needs.build.outputs.image_tag }}"
-          else
-            IMAGE_TAG="${GITHUB_SHA}"
-          fi
-
           echo "deploy_env=${DEPLOY_ENV}" >> "$GITHUB_OUTPUT"
-          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
-          echo "registry=${{ steps.login-ecr.outputs.registry }}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${{ needs.build.outputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          echo "registry_base=${{ needs.build.outputs.registry_base }}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Validate deploy secrets
+        shell: bash
+        run: |
+          test -n "${{ secrets.AUTH_DATABASE_URL }}" || (echo "AUTH_DATABASE_URL secret is required" && exit 1)
+          test -n "${{ secrets.PRODUCT_DATABASE_URL }}" || (echo "PRODUCT_DATABASE_URL secret is required" && exit 1)
+          test -n "${{ secrets.JWT_SECRET }}" || (echo "JWT_SECRET secret is required" && exit 1)
+          test -n "${{ secrets.GRAFANA_ADMIN_PASSWORD }}" || (echo "GRAFANA_ADMIN_PASSWORD secret is required" && exit 1)
 
       - name: Terraform Init
         run: terraform init -input=false
@@ -175,12 +177,15 @@ jobs:
           terraform plan -input=false \
             -var-file="environments/${{ steps.deploy_meta.outputs.deploy_env }}.tfvars" \
             -var="aws_region=${{ env.AWS_REGION }}" \
-            -var="auth_api_image=${{ steps.deploy_meta.outputs.registry }}/auth-api:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="product_api_image=${{ steps.deploy_meta.outputs.registry }}/product-api:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="gateway_image=${{ steps.deploy_meta.outputs.registry }}/gateway:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="ecommerce_image=${{ steps.deploy_meta.outputs.registry }}/ecommerce:${{ steps.deploy_meta.outputs.image_tag }}" \
+            -var="auth_api_image=${{ steps.deploy_meta.outputs.registry_base }}/auth-api:${{ steps.deploy_meta.outputs.image_tag }}" \
+            -var="product_api_image=${{ steps.deploy_meta.outputs.registry_base }}/product-api:${{ steps.deploy_meta.outputs.image_tag }}" \
+            -var="gateway_image=${{ steps.deploy_meta.outputs.registry_base }}/gateway:${{ steps.deploy_meta.outputs.image_tag }}" \
+            -var="ecommerce_image=${{ steps.deploy_meta.outputs.registry_base }}/ecommerce:${{ steps.deploy_meta.outputs.image_tag }}" \
+            -var="dockerhub_repository_credentials_secret_arn=${{ secrets.DOCKERHUB_REPOSITORY_CREDENTIALS_SECRET_ARN }}" \
             -var="auth_database_url=${{ secrets.AUTH_DATABASE_URL }}" \
+            -var="grafana_admin_password=${{ secrets.GRAFANA_ADMIN_PASSWORD }}" \
             -var="product_database_url=${{ secrets.PRODUCT_DATABASE_URL }}" \
+            -var="jwt_refresh_secret=${{ secrets.JWT_REFRESH_SECRET }}" \
             -var="jwt_secret=${{ secrets.JWT_SECRET }}"
 
       - name: Terraform Apply
@@ -188,12 +193,15 @@ jobs:
           terraform apply -auto-approve -input=false \
             -var-file="environments/${{ steps.deploy_meta.outputs.deploy_env }}.tfvars" \
             -var="aws_region=${{ env.AWS_REGION }}" \
-            -var="auth_api_image=${{ steps.deploy_meta.outputs.registry }}/auth-api:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="product_api_image=${{ steps.deploy_meta.outputs.registry }}/product-api:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="gateway_image=${{ steps.deploy_meta.outputs.registry }}/gateway:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="ecommerce_image=${{ steps.deploy_meta.outputs.registry }}/ecommerce:${{ steps.deploy_meta.outputs.image_tag }}" \
+            -var="auth_api_image=${{ steps.deploy_meta.outputs.registry_base }}/auth-api:${{ steps.deploy_meta.outputs.image_tag }}" \
+            -var="product_api_image=${{ steps.deploy_meta.outputs.registry_base }}/product-api:${{ steps.deploy_meta.outputs.image_tag }}" \
+            -var="gateway_image=${{ steps.deploy_meta.outputs.registry_base }}/gateway:${{ steps.deploy_meta.outputs.image_tag }}" \
+            -var="ecommerce_image=${{ steps.deploy_meta.outputs.registry_base }}/ecommerce:${{ steps.deploy_meta.outputs.image_tag }}" \
+            -var="dockerhub_repository_credentials_secret_arn=${{ secrets.DOCKERHUB_REPOSITORY_CREDENTIALS_SECRET_ARN }}" \
             -var="auth_database_url=${{ secrets.AUTH_DATABASE_URL }}" \
+            -var="grafana_admin_password=${{ secrets.GRAFANA_ADMIN_PASSWORD }}" \
             -var="product_database_url=${{ secrets.PRODUCT_DATABASE_URL }}" \
+            -var="jwt_refresh_secret=${{ secrets.JWT_REFRESH_SECRET }}" \
             -var="jwt_secret=${{ secrets.JWT_SECRET }}"
 
       - name: Deployment Summary
@@ -201,6 +209,6 @@ jobs:
           echo "## AWS ECS Deployment" >> "$GITHUB_STEP_SUMMARY"
           echo "Environment: ${{ steps.deploy_meta.outputs.deploy_env }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Image tag: ${{ steps.deploy_meta.outputs.image_tag }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Registry: ${{ steps.deploy_meta.outputs.registry }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Registry base: ${{ steps.deploy_meta.outputs.registry_base }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           terraform output >> "$GITHUB_STEP_SUMMARY"

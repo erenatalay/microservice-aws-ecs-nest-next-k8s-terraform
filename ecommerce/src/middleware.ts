@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+const CORRELATION_ID_COOKIE = 'correlation-id';
+
 const ROUTES = {
   public: ['/', '/about', '/contact'],
 
@@ -33,35 +35,51 @@ function redirect(request: NextRequest, path: string): NextResponse {
   return NextResponse.redirect(url);
 }
 
+function withCorrelationId(
+  request: NextRequest,
+  response: NextResponse,
+): NextResponse {
+  const correlationId =
+    request.cookies.get(CORRELATION_ID_COOKIE)?.value || crypto.randomUUID();
+
+  response.cookies.set(CORRELATION_ID_COOKIE, correlationId, {
+    sameSite: 'lax',
+    path: '/',
+  });
+  response.headers.set('x-correlation-id', correlationId);
+
+  return response;
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const accessToken = request.cookies.get('accessToken')?.value;
 
   if (matchesPath(pathname, ROUTES.api)) {
-    return NextResponse.next();
+    return withCorrelationId(request, NextResponse.next());
   }
 
   if (matchesPath(pathname, ROUTES.public)) {
-    return NextResponse.next();
+    return withCorrelationId(request, NextResponse.next());
   }
 
   const isLoggedIn = accessToken && !isTokenExpired(accessToken);
 
   if (matchesPath(pathname, ROUTES.auth)) {
     if (isLoggedIn) {
-      return redirect(request, '/products');
+      return withCorrelationId(request, redirect(request, '/products'));
     }
-    return NextResponse.next();
+    return withCorrelationId(request, NextResponse.next());
   }
 
   if (matchesPath(pathname, ROUTES.protected)) {
     if (!isLoggedIn) {
-      return redirect(request, '/login');
+      return withCorrelationId(request, redirect(request, '/login'));
     }
-    return NextResponse.next();
+    return withCorrelationId(request, NextResponse.next());
   }
 
-  return NextResponse.next();
+  return withCorrelationId(request, NextResponse.next());
 }
 
 export const config = {

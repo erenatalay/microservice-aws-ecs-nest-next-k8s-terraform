@@ -1,170 +1,26 @@
 import cookieParser from 'cookie-parser';
-import { randomUUID } from 'crypto';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from './app.module';
-
-const SENSITIVE_KEY_PATTERNS = [
-  'authorization',
-  'cookie',
-  'set-cookie',
-  'x-api-key',
-  'api-key',
-  'apikey',
-  'token',
-  'access_token',
-  'refresh_token',
-  'password',
-  'pass',
-  'secret',
-  'session',
-  'jwt',
-];
-
-const CORRELATION_ID_HEADER = 'x-correlation-id';
-const CORRELATION_ID_COOKIE = 'correlation-id';
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
-const isSensitiveKey = (key: string) =>
-  SENSITIVE_KEY_PATTERNS.some((pattern) => key.toLowerCase().includes(pattern));
-
-const redactValue = (value: unknown): unknown => {
-  if (Array.isArray(value)) {
-    return value.map((entry) => redactValue(entry));
-  }
-  if (isPlainObject(value)) {
-    return Object.entries(value).reduce<Record<string, unknown>>(
-      (acc, [key, entry]) => {
-        acc[key] = isSensitiveKey(key) ? '[REDACTED]' : redactValue(entry);
-        return acc;
-      },
-      {},
-    );
-  }
-  return value;
-};
-
-const normalizeBody = (body: unknown, contentType?: string): unknown => {
-  if (body === undefined) return undefined;
-  if (Buffer.isBuffer(body)) return body.toString('utf8');
-  if (typeof body === 'string') {
-    if (contentType?.includes('application/json')) {
-      try {
-        return redactValue(JSON.parse(body));
-      } catch {
-        return body;
-      }
-    }
-    return body;
-  }
-  return redactValue(body);
-};
-
-const normalizeHeaders = (headers: Record<string, unknown>) => {
-  const cleaned = Object.entries(headers).reduce<Record<string, unknown>>(
-    (acc, [key, value]) => {
-      if (value !== undefined) acc[key] = value;
-      return acc;
-    },
-    {},
-  );
-  return redactValue(cleaned);
-};
-
-const safeStringify = (value: unknown) => {
-  const seen = new WeakSet();
-  return JSON.stringify(value, (key, val) => {
-    if (typeof val === 'object' && val !== null) {
-      if (seen.has(val)) return '[CIRCULAR]';
-      seen.add(val);
-    }
-    return val;
-  });
-};
+import { applyRequestLogging } from './logging/request-logging';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(cookieParser());
-
-  app.use((req, res, next) => {
-    const headerValue = req.headers[CORRELATION_ID_HEADER];
-    const cookieValue = req.cookies?.[CORRELATION_ID_COOKIE];
-    const correlationId =
-      typeof headerValue === 'string' && headerValue.length > 0
-        ? headerValue
-        : typeof cookieValue === 'string' && cookieValue.length > 0
-          ? cookieValue
-          : randomUUID();
-
-    (req.headers as Record<string, string>)[CORRELATION_ID_HEADER] =
-      correlationId;
-    res.setHeader(CORRELATION_ID_HEADER, correlationId);
-    res.cookie(CORRELATION_ID_COOKIE, correlationId);
-
-    const startedAt = process.hrtime.bigint();
-    const requestHeaders = normalizeHeaders(
-      req.headers as Record<string, unknown>,
-    );
-    const requestBody = normalizeBody(req.body, req.headers['content-type']);
-    const originalSend = res.send.bind(res);
-    const originalJson = res.json.bind(res);
-    let responseBody: unknown;
-
-    res.send = (body: unknown) => {
-      responseBody = body;
-      return originalSend(body);
-    };
-    res.json = (body: unknown) => {
-      responseBody = body;
-      return originalJson(body);
-    };
-
-    res.on('finish', () => {
-      const durationMs =
-        Number(process.hrtime.bigint() - startedAt) / 1_000_000;
-      const responseHeaders = normalizeHeaders(
-        res.getHeaders() as Record<string, unknown>,
-      );
-      const responseBodyNormalized = normalizeBody(
-        responseBody,
-        res.getHeader('content-type')?.toString(),
-      );
-      Logger.log(
-        safeStringify({
-          service: 'gateway',
-          correlationId,
-          method: req.method,
-          path: req.originalUrl,
-          statusCode: res.statusCode,
-          durationMs: Number(durationMs.toFixed(1)),
-          request: {
-            headers: requestHeaders,
-            body: requestBody,
-          },
-          response: {
-            headers: responseHeaders,
-            body: responseBodyNormalized,
-          },
-        }),
-      );
-    });
-
-    next();
-  });
+  app.use(applyRequestLogging('gateway'));
 
   app.enableCors({
     origin: true,
     credentials: true,
   });
 
-  const PORT = process.env.PORT || 4000;
-  await app.listen(PORT);
+  const port = process.env.PORT || 4000;
 
-  Logger.log(`🚀 Gateway is running on: http://localhost:${PORT}/graphql`);
-  Logger.log(`📚 GraphQL Playground: http://localhost:${PORT}/graphql`);
+  await app.listen(port, '0.0.0.0');
+
+  Logger.log(`Gateway is running on: http://localhost:${port}/graphql`);
 }
-bootstrap();
+
+void bootstrap();
