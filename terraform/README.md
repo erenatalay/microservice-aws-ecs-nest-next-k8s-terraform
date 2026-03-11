@@ -1,6 +1,6 @@
 # AWS ECS + Terraform + Loki/Grafana
 
-Bu klasor AWS ECS Fargate, Docker Hub, Loki ve Grafana tabanli production mimarisini kurar.
+Bu klasor tek ortam olarak production AWS ECS Fargate, Docker Hub, Loki ve Grafana mimarisini kurar.
 
 Kurulan ana bilesenler:
 - 2 AZ uzerinde public ve private subnet yapisi
@@ -35,6 +35,11 @@ Gerekli degiskenler:
 - `grafana_admin_password`
 - `jwt_refresh_secret` (opsiyonel, bos ise `jwt_secret` kullanilir)
 - `dockerhub_repository_credentials_secret_arn` (Docker Hub private image kullaniliyorsa)
+
+Veritabani notu:
+- Terraform bu yapida veritabani olusturmaz
+- `AUTH_DATABASE_URL` ve `PRODUCT_DATABASE_URL` ile senin verdigin mevcut veritabanlarina baglanir
+- Veritabani adi, host, kullanici ve sifre tamamen bu URL'lerde ne verdiysen odur
 
 Hizli kullanim:
 

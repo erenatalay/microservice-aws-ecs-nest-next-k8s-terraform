@@ -48,6 +48,8 @@ locals {
 
   public_app_url = trimspace(var.public_app_url) != "" ? trimspace(var.public_app_url) : "http://${aws_lb.main.dns_name}"
   public_graphql_url = trimspace(var.next_public_graphql_url) != "" ? trimspace(var.next_public_graphql_url) : "${local.public_app_url}/graphql"
+  app_frontend_domain = trimspace(var.app_frontend_domain) != "" ? trimspace(var.app_frontend_domain) : local.public_app_url
+  cookie_secure_value = trimspace(var.cookie_secure) != "" ? trimspace(var.cookie_secure) : (startswith(local.public_app_url, "https://") ? "true" : "false")
 }
 
 resource "aws_vpc" "main" {
@@ -605,6 +607,7 @@ resource "aws_ecs_task_definition" "auth_api" {
           { name = "PASSWORD_RESET_EXPIRES_IN", value = var.password_reset_expires_in },
           { name = "JWT_ISSUER", value = var.jwt_issuer },
           { name = "JWT_AUDIENCE", value = var.jwt_audience },
+          { name = "APP_FRONTEND_DOMAIN", value = local.app_frontend_domain },
           { name = "CORS_ORIGIN", value = local.public_app_url },
           { name = "CORS_ORIGIN_LOCAL", value = "http://localhost:3000" }
         ]
@@ -791,6 +794,8 @@ resource "aws_ecs_task_definition" "ecommerce" {
           { name = "NODE_ENV", value = "production" },
           { name = "PORT", value = "3000" },
           { name = "HOSTNAME", value = "0.0.0.0" },
+          { name = "COOKIE_SECURE", value = local.cookie_secure_value },
+          { name = "COOKIE_DOMAIN", value = var.cookie_domain },
           { name = "INTERNAL_GRAPHQL_URL", value = "http://gateway.${var.service_discovery_namespace}:4000/graphql" },
           { name = "NEXT_PUBLIC_GRAPHQL_URL", value = local.public_graphql_url }
         ]

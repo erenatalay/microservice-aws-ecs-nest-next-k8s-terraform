@@ -234,6 +234,24 @@ variable "next_public_graphql_url" {
   default     = ""
 }
 
+variable "app_frontend_domain" {
+  description = "Frontend base URL used in auth emails"
+  type        = string
+  default     = ""
+}
+
+variable "cookie_secure" {
+  description = "Force COOKIE_SECURE env for ecommerce. Leave empty to auto-derive from public_app_url"
+  type        = string
+  default     = ""
+}
+
+variable "cookie_domain" {
+  description = "COOKIE_DOMAIN env for ecommerce"
+  type        = string
+  default     = ""
+}
+
 variable "auth_api_cpu" {
   description = "Fargate CPU for auth-api"
   type        = number

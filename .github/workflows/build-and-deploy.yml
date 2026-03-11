@@ -14,15 +14,6 @@ on:
           - build-only
           - deploy-only
           - build-and-deploy
-      environment:
-        description: "Terraform environment file"
-        required: true
-        default: "production"
-        type: choice
-        options:
-          - dev
-          - staging
-          - production
       image_tag:
         description: "Image tag for deploy-only"
         required: false
@@ -145,14 +136,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            DEPLOY_ENV="${{ github.event.inputs.environment }}"
-          else
-            DEPLOY_ENV="production"
-          fi
-
-          echo "deploy_env=${DEPLOY_ENV}" >> "$GITHUB_OUTPUT"
           echo "image_tag=${{ needs.build.outputs.image_tag }}" >> "$GITHUB_OUTPUT"
           echo "registry_base=${{ needs.build.outputs.registry_base }}" >> "$GITHUB_OUTPUT"
 
@@ -175,7 +158,7 @@ jobs:
       - name: Terraform Plan
         run: |
           terraform plan -input=false \
-            -var-file="environments/${{ steps.deploy_meta.outputs.deploy_env }}.tfvars" \
+            -var-file="environments/production.tfvars" \
             -var="aws_region=${{ env.AWS_REGION }}" \
             -var="auth_api_image=${{ steps.deploy_meta.outputs.registry_base }}/auth-api:${{ steps.deploy_meta.outputs.image_tag }}" \
             -var="product_api_image=${{ steps.deploy_meta.outputs.registry_base }}/product-api:${{ steps.deploy_meta.outputs.image_tag }}" \
@@ -191,7 +174,7 @@ jobs:
       - name: Terraform Apply
         run: |
           terraform apply -auto-approve -input=false \
-            -var-file="environments/${{ steps.deploy_meta.outputs.deploy_env }}.tfvars" \
+            -var-file="environments/production.tfvars" \
             -var="aws_region=${{ env.AWS_REGION }}" \
             -var="auth_api_image=${{ steps.deploy_meta.outputs.registry_base }}/auth-api:${{ steps.deploy_meta.outputs.image_tag }}" \
             -var="product_api_image=${{ steps.deploy_meta.outputs.registry_base }}/product-api:${{ steps.deploy_meta.outputs.image_tag }}" \
@@ -207,7 +190,7 @@ jobs:
       - name: Deployment Summary
         run: |
           echo "## AWS ECS Deployment" >> "$GITHUB_STEP_SUMMARY"
-          echo "Environment: ${{ steps.deploy_meta.outputs.deploy_env }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Environment: production" >> "$GITHUB_STEP_SUMMARY"
           echo "Image tag: ${{ steps.deploy_meta.outputs.image_tag }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Registry base: ${{ steps.deploy_meta.outputs.registry_base }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
