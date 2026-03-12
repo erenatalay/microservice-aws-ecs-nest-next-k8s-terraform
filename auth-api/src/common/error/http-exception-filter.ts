@@ -8,6 +8,15 @@ import {
   Logger,
 } from '@nestjs/common';
 
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+type JsonObject = { [key: string]: JsonValue | undefined };
+
+interface ExceptionResponseBody extends JsonObject {
+  message?: string | string[];
+  errors?: JsonValue;
+}
+
 const safeStringify = (value: unknown) => {
   const seen = new WeakSet();
   return JSON.stringify(value, (_key, currentValue) => {
@@ -18,6 +27,29 @@ const safeStringify = (value: unknown) => {
 
     return currentValue;
   });
+};
+
+const isExceptionResponseBody = (
+  value: unknown,
+): value is ExceptionResponseBody =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const extractErrorMessage = (
+  responseBody: ExceptionResponseBody,
+  fallbackMessage: string,
+) => {
+  if (Array.isArray(responseBody.message)) {
+    return responseBody.message.join(', ');
+  }
+
+  if (
+    typeof responseBody.message === 'string' &&
+    responseBody.message.length > 0
+  ) {
+    return responseBody.message;
+  }
+
+  return fallbackMessage;
 };
 
 @Catch()
@@ -50,25 +82,21 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'An error occurred, please try again later';
-    let errorDetails = null;
+    let errorDetails: JsonValue | null = null;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const responseBody = exception.getResponse();
 
-      if (typeof responseBody === 'object' && responseBody !== null) {
-        message = (responseBody as { message?: string | string[] }).message
-          ? Array.isArray((responseBody as { message?: string | string[] }).message)
-            ? (responseBody as { message: string[] }).message.join(', ')
-            : (responseBody as { message: string }).message
-          : exception.message;
-
-        errorDetails = (responseBody as { errors?: unknown }).errors || null;
+      if (isExceptionResponseBody(responseBody)) {
+        message = extractErrorMessage(responseBody, exception.message);
+        errorDetails = responseBody.errors ?? null;
       } else {
         message = exception.message;
       }
     } else {
-      message = exception instanceof Error ? exception.message : String(exception);
+      message =
+        exception instanceof Error ? exception.message : String(exception);
     }
 
     this.logger.error(
@@ -94,10 +122,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       path: request?.url || 'unknown',
       message,
-      ...(correlationId && { correlationId }),
-      ...(typeof errorDetails === 'object' && errorDetails !== null
-        ? { errors: errorDetails }
-        : {}),
+      ...(typeof correlationId === 'string' ? { correlationId } : {}),
+      ...(errorDetails !== null ? { errors: errorDetails } : {}),
       ...(isDevelopment && {
         stack: exception instanceof Error ? exception.stack : undefined,
       }),
