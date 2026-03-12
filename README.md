@@ -1,28 +1,28 @@
 # Microservice Cloud Monorepo
 
-Bu repo AWS ECS Fargate, Terraform, Docker Hub, Loki ve Grafana tabanli mikroservis yapisini icerir.
+This repository contains a microservice architecture built on AWS ECS Fargate, Terraform, Docker Hub, Loki, and Grafana.
 
-Servisler:
+Services:
 - `auth-api`
 - `product-api`
 - `gateway`
 - `ecommerce`
 
-Uretim mimarisi:
+Production architecture:
 - ALB + ECS Fargate
-- Private subnet uzerinde calisan task'lar
+- Tasks running in private subnets
 - Cloud Map service discovery
-- FireLens ile Loki'ye akan uygulama loglari
-- Grafana uzerinden correlation id, kullanici ve hata takibi
-- CloudWatch uzerinde platform loglari, ECS/ALB metric ve alarm takibi
-- Docker Hub image dagitimi
+- Application logs shipped to Loki through FireLens
+- Correlation ID, user activity, and error tracking in Grafana
+- Platform logs, ECS/ALB metrics, and alarms in CloudWatch
+- Docker Hub image distribution
 
-Deploy ve altyapi dokumani:
+Deployment and infrastructure documentation:
 - `terraform/README.md`
 
 CI/CD workflow:
 - `.github/workflows/build-and-deploy.yml`
 
-Lokal gelistirme:
+Local development:
 - `docker-compose.dev.yml`
 - `docker-compose.yml`
