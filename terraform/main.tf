@@ -11,14 +11,20 @@ data "aws_caller_identity" "current" {}
 locals {
   name_prefix = "${var.project_name}-${var.environment}"
 
-  tags = merge(
-    {
-      Project     = var.project_name
-      Environment = var.environment
-      ManagedBy   = "terraform"
-    },
-    var.common_tags
-  )
+  base_tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }
+
+  reserved_tag_keys = [for key in keys(local.base_tags) : lower(key)]
+  common_tags_sanitized = {
+    for key, value in var.common_tags :
+    key => value
+    if !contains(local.reserved_tag_keys, lower(key))
+  }
+
+  tags = merge(local.base_tags, local.common_tags_sanitized)
 
   azs                  = slice(data.aws_availability_zones.available.names, 0, var.availability_zone_count)
   nat_gateway_count    = var.single_nat_gateway ? 1 : length(local.azs)

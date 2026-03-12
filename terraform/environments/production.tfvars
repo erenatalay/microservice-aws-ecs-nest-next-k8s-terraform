@@ -66,8 +66,5 @@ ecommerce_memory                   = 2048
 ecommerce_request_count_target     = 1000
 
 common_tags = {
-  managed_by  = "terraform"
-  project     = "microservice-cloud"
-  environment = "production"
-  team        = "platform"
+  team = "platform"
 }
