@@ -198,6 +198,23 @@ jobs:
           echo "image_tag=${{ needs.build.outputs.image_tag }}" >> "$GITHUB_OUTPUT"
           echo "registry_base=${{ needs.build.outputs.registry_base }}" >> "$GITHUB_OUTPUT"
 
+      - name: Export Terraform variables
+        shell: bash
+        run: |
+          {
+            echo "TF_VAR_aws_region=${{ env.AWS_REGION }}"
+            echo "TF_VAR_auth_api_image=${{ steps.deploy_meta.outputs.registry_base }}/auth-api:${{ steps.deploy_meta.outputs.image_tag }}"
+            echo "TF_VAR_product_api_image=${{ steps.deploy_meta.outputs.registry_base }}/product-api:${{ steps.deploy_meta.outputs.image_tag }}"
+            echo "TF_VAR_gateway_image=${{ steps.deploy_meta.outputs.registry_base }}/gateway:${{ steps.deploy_meta.outputs.image_tag }}"
+            echo "TF_VAR_ecommerce_image=${{ steps.deploy_meta.outputs.registry_base }}/ecommerce:${{ steps.deploy_meta.outputs.image_tag }}"
+            echo "TF_VAR_dockerhub_repository_credentials_secret_arn=${{ secrets.DOCKERHUB_REPOSITORY_CREDENTIALS_SECRET_ARN }}"
+            echo "TF_VAR_auth_database_url=${{ secrets.AUTH_DATABASE_URL }}"
+            echo "TF_VAR_product_database_url=${{ secrets.PRODUCT_DATABASE_URL }}"
+            echo "TF_VAR_jwt_refresh_secret=${{ secrets.JWT_REFRESH_SECRET }}"
+            echo "TF_VAR_jwt_secret=${{ secrets.JWT_SECRET }}"
+            echo "TF_VAR_grafana_admin_password=${{ secrets.GRAFANA_ADMIN_PASSWORD }}"
+          } >> "$GITHUB_ENV"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -281,34 +298,12 @@ jobs:
       - name: Terraform Plan
         run: |
           terraform plan -input=false \
-            -var-file="environments/production.tfvars" \
-            -var="aws_region=${{ env.AWS_REGION }}" \
-            -var="auth_api_image=${{ steps.deploy_meta.outputs.registry_base }}/auth-api:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="product_api_image=${{ steps.deploy_meta.outputs.registry_base }}/product-api:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="gateway_image=${{ steps.deploy_meta.outputs.registry_base }}/gateway:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="ecommerce_image=${{ steps.deploy_meta.outputs.registry_base }}/ecommerce:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="dockerhub_repository_credentials_secret_arn=${{ secrets.DOCKERHUB_REPOSITORY_CREDENTIALS_SECRET_ARN }}" \
-            -var="auth_database_url=${{ secrets.AUTH_DATABASE_URL }}" \
-            -var="grafana_admin_password=${{ secrets.GRAFANA_ADMIN_PASSWORD }}" \
-            -var="product_database_url=${{ secrets.PRODUCT_DATABASE_URL }}" \
-            -var="jwt_refresh_secret=${{ secrets.JWT_REFRESH_SECRET }}" \
-            -var="jwt_secret=${{ secrets.JWT_SECRET }}"
+            -var-file="environments/production.tfvars"
 
       - name: Terraform Apply
         run: |
           terraform apply -auto-approve -input=false \
-            -var-file="environments/production.tfvars" \
-            -var="aws_region=${{ env.AWS_REGION }}" \
-            -var="auth_api_image=${{ steps.deploy_meta.outputs.registry_base }}/auth-api:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="product_api_image=${{ steps.deploy_meta.outputs.registry_base }}/product-api:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="gateway_image=${{ steps.deploy_meta.outputs.registry_base }}/gateway:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="ecommerce_image=${{ steps.deploy_meta.outputs.registry_base }}/ecommerce:${{ steps.deploy_meta.outputs.image_tag }}" \
-            -var="dockerhub_repository_credentials_secret_arn=${{ secrets.DOCKERHUB_REPOSITORY_CREDENTIALS_SECRET_ARN }}" \
-            -var="auth_database_url=${{ secrets.AUTH_DATABASE_URL }}" \
-            -var="grafana_admin_password=${{ secrets.GRAFANA_ADMIN_PASSWORD }}" \
-            -var="product_database_url=${{ secrets.PRODUCT_DATABASE_URL }}" \
-            -var="jwt_refresh_secret=${{ secrets.JWT_REFRESH_SECRET }}" \
-            -var="jwt_secret=${{ secrets.JWT_SECRET }}"
+            -var-file="environments/production.tfvars"
 
       - name: Deployment Summary
         run: |
