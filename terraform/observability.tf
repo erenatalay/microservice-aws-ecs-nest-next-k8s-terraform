@@ -185,7 +185,7 @@ resource "aws_efs_access_point" "grafana" {
 }
 
 resource "aws_efs_mount_target" "grafana" {
-  count = length(aws_subnet.private)
+  count = length(local.azs)
 
   file_system_id  = aws_efs_file_system.grafana.id
   subnet_id       = aws_subnet.private[count.index].id
