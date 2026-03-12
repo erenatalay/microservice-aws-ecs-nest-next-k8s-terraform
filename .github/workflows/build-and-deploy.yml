@@ -257,6 +257,10 @@ jobs:
             printf '%s' "$1" | tr '_' '-' | cut -c1-32
           }
 
+          lb_name() {
+            printf '%s' "$1" | tr '_' '-' | cut -c1-32
+          }
+
           import_if_missing() {
             local address="$1"
             local identifier="$2"
@@ -280,6 +284,11 @@ jobs:
             import_if_missing 'aws_cloudwatch_log_group.ecs' "/ecs/${NAME_PREFIX}"
           fi
 
+          LOAD_BALANCER_ARN="$(aws elbv2 describe-load-balancers --names "$(lb_name "${NAME_PREFIX}-alb")" --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || true)"
+          if [[ -n "${LOAD_BALANCER_ARN}" && "${LOAD_BALANCER_ARN}" != "None" ]]; then
+            import_if_missing 'aws_lb.main' "${LOAD_BALANCER_ARN}"
+          fi
+
           GATEWAY_TG_ARN="$(aws elbv2 describe-target-groups --names "$(target_group_name "${NAME_PREFIX}-gtw")" --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || true)"
           if [[ -n "${GATEWAY_TG_ARN}" && "${GATEWAY_TG_ARN}" != "None" ]]; then
             import_if_missing 'aws_lb_target_group.gateway' "${GATEWAY_TG_ARN}"
@@ -293,6 +302,40 @@ jobs:
           GRAFANA_TG_ARN="$(aws elbv2 describe-target-groups --names "$(target_group_name "${NAME_PREFIX}-grafana")" --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || true)"
           if [[ -n "${GRAFANA_TG_ARN}" && "${GRAFANA_TG_ARN}" != "None" ]]; then
             import_if_missing 'aws_lb_target_group.grafana' "${GRAFANA_TG_ARN}"
+          fi
+
+          if [[ -n "${LOAD_BALANCER_ARN}" && "${LOAD_BALANCER_ARN}" != "None" ]]; then
+            HTTP_LISTENER_ARN="$(aws elbv2 describe-listeners --load-balancer-arn "${LOAD_BALANCER_ARN}" --query 'Listeners[?Port==`80`].ListenerArn | [0]' --output text 2>/dev/null || true)"
+            if [[ -n "${HTTP_LISTENER_ARN}" && "${HTTP_LISTENER_ARN}" != "None" ]]; then
+              import_if_missing 'aws_lb_listener.http' "${HTTP_LISTENER_ARN}"
+
+              GATEWAY_RULE_ARN="$(aws elbv2 describe-rules --listener-arn "${HTTP_LISTENER_ARN}" --query 'Rules[?Priority==`100`].RuleArn | [0]' --output text 2>/dev/null || true)"
+              if [[ -n "${GATEWAY_RULE_ARN}" && "${GATEWAY_RULE_ARN}" != "None" ]]; then
+                import_if_missing 'aws_lb_listener_rule.gateway_api' "${GATEWAY_RULE_ARN}"
+              fi
+
+              GRAFANA_RULE_ARN="$(aws elbv2 describe-rules --listener-arn "${HTTP_LISTENER_ARN}" --query 'Rules[?Priority==`110`].RuleArn | [0]' --output text 2>/dev/null || true)"
+              if [[ -n "${GRAFANA_RULE_ARN}" && "${GRAFANA_RULE_ARN}" != "None" ]]; then
+                import_if_missing 'aws_lb_listener_rule.grafana' "${GRAFANA_RULE_ARN}"
+              fi
+            fi
+          fi
+
+          if aws iam get-role --role-name "${NAME_PREFIX}-ecs-execution-role" >/dev/null 2>&1; then
+            import_if_missing 'aws_iam_role.ecs_execution' "${NAME_PREFIX}-ecs-execution-role"
+            import_if_missing 'aws_iam_role_policy_attachment.ecs_execution' "${NAME_PREFIX}-ecs-execution-role/arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+          fi
+
+          if aws iam get-role --role-name "${NAME_PREFIX}-ecs-task-role" >/dev/null 2>&1; then
+            import_if_missing 'aws_iam_role.ecs_task' "${NAME_PREFIX}-ecs-task-role"
+          fi
+
+          if aws iam get-role-policy --role-name "${NAME_PREFIX}-ecs-task-role" --policy-name "${NAME_PREFIX}-loki-s3" >/dev/null 2>&1; then
+            import_if_missing 'aws_iam_role_policy.ecs_task_loki_s3' "${NAME_PREFIX}-ecs-task-role:${NAME_PREFIX}-loki-s3"
+          fi
+
+          if [[ -n "${TF_VAR_dockerhub_repository_credentials_secret_arn}" ]] && aws iam get-role-policy --role-name "${NAME_PREFIX}-ecs-execution-role" --policy-name "${NAME_PREFIX}-dockerhub-secret" >/dev/null 2>&1; then
+            import_if_missing 'aws_iam_role_policy.ecs_execution_dockerhub_secret[0]' "${NAME_PREFIX}-ecs-execution-role:${NAME_PREFIX}-dockerhub-secret"
           fi
 
       - name: Terraform Plan
